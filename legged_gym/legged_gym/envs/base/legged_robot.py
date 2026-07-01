@@ -1823,11 +1823,48 @@ class LeggedRobot(BaseTask):
         contact_filt = torch.logical_or(contact, last_contact) 
         first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
+        air_time_target = getattr(self.cfg.rewards, "feet_air_time_target", 0.5)
+        rew_airTime = torch.sum((self.feet_air_time - air_time_target) * first_contact, dim=1) # reward only on first contact with the ground
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact_filt
         return rew_airTime
-    
+
+    def _reward_feet_slip(self):
+        # Penalize dragging: horizontal foot velocity while the foot is in contact with the ground.
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        foot_vel_xy = self.all_rigid_body_states.view(self.num_envs, -1, 13)[:, self.feet_indices, 7:9]
+        return torch.sum(torch.sum(torch.square(foot_vel_xy), dim=-1) * contact, dim=1)
+
+    def _reward_feet_clearance(self):
+        # Reference-style (agbread/RL_tutorial): enforce swing-foot clearance during the SCHEDULED
+        # swing phase (phase-based, directly attacks dragging), quadratic penalty toward target height.
+        # Height measured above terrain (robust on uneven ground). Foot order [FL,FR,RL,RR] -> trot.
+        period = getattr(self.cfg.rewards, "gait_period", 0.5)
+        phase = (self.episode_length_buf.float() * self.dt / period) % 1.0
+        offsets = torch.tensor([0.0, 0.5, 0.5, 0.0], device=self.device)
+        foot_phase = (phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0
+        scheduled_swing = foot_phase >= 0.5 # second half of cycle = swing
+        target = getattr(self.cfg.rewards, "feet_clearance_target", 0.08)
+        feet_heights = self._get_feet_heights()
+        # feet outside terrain range give -inf terrain height -> +inf here; treat as target (no penalty)
+        feet_heights = torch.nan_to_num(feet_heights, nan=target, posinf=target, neginf=target)
+        err = torch.square(feet_heights - target) * scheduled_swing
+        return torch.sum(err, dim=1)
+
+    def _reward_gait_phase(self):
+        # Reward matching a trot contact schedule (diagonal pairs step together).
+        # Foot order from URDF: [FL, FR, RL, RR] -> trot offsets [0, 0.5, 0.5, 0] (FL+RR, FR+RL).
+        period = getattr(self.cfg.rewards, "gait_period", 0.5)
+        phase = (self.episode_length_buf.float() * self.dt / period) % 1.0
+        offsets = torch.tensor([0.0, 0.5, 0.5, 0.0], device=self.device)
+        foot_phase = (phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0
+        desired_stance = foot_phase < 0.5 # stance first half of cycle, swing second half
+        actual_contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        match = (desired_stance == actual_contact).float()
+        reward = torch.sum(match, dim=1) # 0..4, higher = better trot match
+        reward *= (torch.norm(self.commands[:, :2], dim=1) > 0.1).float() # only when moving
+        return reward
+
     def _reward_stumble(self):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\

@@ -66,7 +66,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         slope_treshold = 1.
 
         TerrainPerlin_kwargs = dict(
-            zScale= 0.03, # back to Jun23 known-good scalar; re-add per-tile [0,0.06] AFTER base walking confirmed
+            zScale= 0.0, # flat: gait rewards (clearance/slip/phase) now force leg-lifting, no need for rough proxy
             frequency= 10,
         )
     
@@ -172,8 +172,11 @@ class Go2RoughCfg( LeggedRobotCfg ):
             tracking_lin_vel = 1.
             tracking_ang_vel = 1.
             energy_substeps = -2e-5
-            # gait shaping: encourage proper stepping (trot) + suppress rocking/vibration (go1/a1 values)
+            # gait shaping: force all 4 legs to step (fixes rear-leg dragging)
             feet_air_time = 1.0
+            feet_slip = -0.2      # penalize dragging (horizontal foot vel while in contact)
+            feet_clearance = -30. # quadratic (h-target)^2 during scheduled swing; large weight (small raw values)
+            gait_phase = 0.5      # reward trot contact schedule (diagonal pairs step together)
             lin_vel_z = -1.0
             ang_vel_xy = -0.05
             orientation = -2.0
@@ -188,6 +191,9 @@ class Go2RoughCfg( LeggedRobotCfg ):
             exceed_torque_limits_l1norm = -0.4
             dof_vel_limits = -0.4
         dof_error_names = ["FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint"]
+        feet_air_time_target = 0.25 # lower so trot-frequency short steps aren't penalized (was 0.5)
+        feet_clearance_target = 0.08 # target swing-foot height above terrain [m]
+        gait_period = 0.5 # trot gait cycle period [s]
         only_positive_rewards = False
         soft_dof_vel_limit = 0.9
         soft_dof_pos_limit = 0.9
