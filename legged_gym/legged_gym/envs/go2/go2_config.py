@@ -66,7 +66,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         slope_treshold = 1.
 
         TerrainPerlin_kwargs = dict(
-            zScale= [0.0, 0.06], # per-tile random roughness: flat tiles (clean standstill) + rough tiles (robust gait) coexist
+            zScale= 0.03, # back to Jun23 known-good scalar; re-add per-tile [0,0.06] AFTER base walking confirmed
             frequency= 10,
         )
     
@@ -75,7 +75,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         resampling_time = 5 # [s]
         lin_cmd_cutoff = 0.2
         ang_cmd_cutoff = 0.2
-        stand_still_prob = 0.15 # 15% of resampled envs get full-zero command → learn to stand still
+        stand_still_prob = 0.1 # 10% zero-command for standstill learning (was 0.15)
         class ranges( LeggedRobotCfg.commands.ranges ):
             lin_vel_x = [-1.0, 1.5]
             lin_vel_y = [-1., 1.]
@@ -177,12 +177,11 @@ class Go2RoughCfg( LeggedRobotCfg ):
             lin_vel_z = -1.0
             ang_vel_xy = -0.05
             orientation = -2.0
-            action_rate = -0.1
+            action_rate = -0.05 # back to Jun23 (walked); -0.1 over-suppressed motion
             dof_acc = -2.5e-7
-            dof_vel = -1e-3 # suppress joint jitter (standstill vibration)
-            stop_lin_vel = -2.0 # penalize body motion at zero command (clean standstill)
-            stand_still = -5.
-            dof_error_named = -3. # stronger hip-to-default → stops left-leg splay / asymmetry
+            stop_lin_vel = -0.5 # gentle: only at zero command (was -2.0 which froze the robot)
+            stand_still = -2. # back to Jun23 (-5 froze it)
+            dof_error_named = -1.5 # slight bump from Jun23's -1 for asymmetry (was -3, too strong)
             dof_error = -0.01
             # penalty for hardware safety
             exceed_dof_pos_limits = -0.4
