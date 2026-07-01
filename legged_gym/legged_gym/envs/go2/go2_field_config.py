@@ -28,16 +28,16 @@ class Go2FieldCfg( Go2RoughCfg ):
         BarrierTrack_kwargs = dict(
             options= [
                 "jump",
-                "leap",
+                # "leap",
                 "hurdle",
-                "down",
-                "tilted_ramp",
+                # "down",
+                # "tilted_ramp",
                 "stairsup",
                 "stairsdown",
-                "discrete_rect",
-                "slope",
-                "wave",
-            ], # each race track will permute all the options
+                # "discrete_rect",
+                # "slope",
+                # "wave",
+            ], # each race track will permute all the options. run is handled by the flat track segments + base locomotion
             jump= dict(
                 height= [0.05, 0.5],
                 depth= [0.1, 0.3],
@@ -57,7 +57,7 @@ class Go2FieldCfg( Go2RoughCfg ):
             ),
             down= dict(
                 height= [0.1, 0.6],
-                depth= [0.3, 0.5],
+                depth= [0.2, 0.2],
             ),
             tilted_ramp= dict(
                 tilt_angle= [0.2, 0.5],
@@ -93,14 +93,14 @@ class Go2FieldCfg( Go2RoughCfg ):
             ),
             stairsup= dict(
                 height= [0.1, 0.3],
-                length= [0.3, 0.5],
+                length= [0.2, 0.4],
                 residual_distance= 0.05,
                 num_steps= [3, 19],
                 num_steps_curriculum= True,
             ),
             stairsdown= dict(
                 height= [0.1, 0.3],
-                length= [0.3, 0.5],
+                length= [0.2, 0.4],
                 num_steps= [3, 19],
                 num_steps_curriculum= True,
             ),
@@ -118,10 +118,10 @@ class Go2FieldCfg( Go2RoughCfg ):
             track_block_length= 2.4,
             wall_thickness= (0.01, 0.6),
             wall_height= [-0.5, 2.0],
-            add_perlin_noise= True,
-            border_perlin_noise= True,
+            add_perlin_noise= False, # flat base terrain (paper-style)
+            border_perlin_noise= False,
             border_height= 0.,
-            virtual_terrain= False,
+            virtual_terrain= False, # stairs have no virtual/soft version; rely on jump/hurdle skill-transfer (original working recipe)
             draw_virtual_terrain= True,
             engaging_next_threshold= 0.8,
             engaging_finish_threshold= 0.,
@@ -131,10 +131,12 @@ class Go2FieldCfg( Go2RoughCfg ):
             n_obstacles_per_track= 1,
         )
 
+
     class commands( Go2RoughCfg.commands ):
         # a mixture of command sampling and goal_based command update allows only high speed range
         # in x-axis but no limits on y-axis and yaw-axis
         lin_cmd_cutoff = 0.2
+        stand_still_prob = 0. # guard: no standstill injection for field (goal-based stair oracle)
         class ranges( Go2RoughCfg.commands.ranges ):
             # lin_vel_x = [0.6, 1.8]
             lin_vel_x = [-0.6, 2.0]
@@ -166,6 +168,7 @@ class Go2FieldCfg( Go2RoughCfg ):
         class scales:
             tracking_lin_vel = 1.
             tracking_ang_vel = 1.
+            feet_air_time = 0.5 # keep foot-lifting gait on flat run segments (low conflict with stair pitch)
             energy_substeps = -2e-7
             torques = -1e-7
             stand_still = -1.
@@ -196,9 +199,10 @@ class Go2FieldCfgPPO( Go2RoughCfgPPO ):
         experiment_name = "field_go2"
 
         resume = True
-        load_run = osp.join(logs_root, "rough_go2",
-            "{Your trained walking model directory}",
+        load_run = osp.join(logs_root, "flat_go2",
+            "Jun23_15-41-06_Go2Flat_pEnergy-2e-05_pDofErr-1e-02_pDofErrN-1e+00_pStand-2e+00_noResume",
         )
+        checkpoint = 8000 # stable saved checkpoint (noise_std settled ~0.20, reward 20.7)
 
         run_name = "".join(["Go2_",
             ("{:d}skills".format(len(Go2FieldCfg.terrain.BarrierTrack_kwargs["options"]))),
@@ -223,7 +227,7 @@ class Go2FieldCfgPPO( Go2RoughCfgPPO ):
             ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
         ])
 
-        max_iterations = 38000
-        save_interval = 10000
-        log_interval = 100
+        max_iterations = 10000 # short validation first; extend after confirming stairs climb + gait holds
+        save_interval = 500
+        log_interval = 50
         

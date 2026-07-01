@@ -66,7 +66,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         slope_treshold = 1.
 
         TerrainPerlin_kwargs = dict(
-            zScale= 0.07,
+            zScale= [0.0, 0.06], # per-tile random roughness: flat tiles (clean standstill) + rough tiles (robust gait) coexist
             frequency= 10,
         )
     
@@ -75,6 +75,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         resampling_time = 5 # [s]
         lin_cmd_cutoff = 0.2
         ang_cmd_cutoff = 0.2
+        stand_still_prob = 0.15 # 15% of resampled envs get full-zero command → learn to stand still
         class ranges( LeggedRobotCfg.commands.ranges ):
             lin_vel_x = [-1.0, 1.5]
             lin_vel_y = [-1., 1.]
@@ -171,8 +172,17 @@ class Go2RoughCfg( LeggedRobotCfg ):
             tracking_lin_vel = 1.
             tracking_ang_vel = 1.
             energy_substeps = -2e-5
-            stand_still = -2.
-            dof_error_named = -1.
+            # gait shaping: encourage proper stepping (trot) + suppress rocking/vibration (go1/a1 values)
+            feet_air_time = 1.0
+            lin_vel_z = -1.0
+            ang_vel_xy = -0.05
+            orientation = -2.0
+            action_rate = -0.1
+            dof_acc = -2.5e-7
+            dof_vel = -1e-3 # suppress joint jitter (standstill vibration)
+            stop_lin_vel = -2.0 # penalize body motion at zero command (clean standstill)
+            stand_still = -5.
+            dof_error_named = -3. # stronger hip-to-default → stops left-leg splay / asymmetry
             dof_error = -0.01
             # penalty for hardware safety
             exceed_dof_pos_limits = -0.4
@@ -262,12 +272,12 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
     class runner( LeggedRobotCfgPPO.runner ):
         policy_class_name = "EncoderStateAcRecurrent"
         algorithm_class_name = "EstimatorPPO"
-        experiment_name = "rough_go2"
-        
+        experiment_name = "flat_go2"
+
         resume = False
         load_run = None
 
-        run_name = "".join(["Go2Rough",
+        run_name = "".join(["Go2Flat",
             ("_pEnergy" + np.format_float_scientific(Go2RoughCfg.rewards.scales.energy_substeps, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.energy_substeps != 0 else ""),
             ("_pDofErr" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error != 0 else ""),
             ("_pDofErrN" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error_named, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error_named != 0 else ""),
@@ -275,6 +285,6 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
             ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
         ])
 
-        max_iterations = 2000
+        max_iterations = 15000
         save_interval = 2000
         log_interval = 100

@@ -17,7 +17,23 @@ class TerrainPerlin:
         self.tot_rows = int(self.xSize / cfg.horizontal_scale)
         self.tot_cols = int(self.ySize / cfg.horizontal_scale)
         assert(self.xSize == cfg.horizontal_scale * self.tot_rows and self.ySize == cfg.horizontal_scale * self.tot_cols)
-        self.heightsamples_float = self.generate_fractal_noise_2d(self.xSize, self.ySize, self.tot_rows, self.tot_cols, **cfg.TerrainPerlin_kwargs)
+        zscale_cfg = cfg.TerrainPerlin_kwargs.get("zScale", 0.23)
+        if isinstance(zscale_cfg, (list, tuple)):
+            # per-tile random roughness: each (row,col) tile gets its own zScale in [min,max],
+            # so flat-ish and rougher tiles coexist -> robot experiences both (robust walking).
+            other_kwargs = {k: v for k, v in cfg.TerrainPerlin_kwargs.items() if k != "zScale"}
+            unit_noise = self.generate_fractal_noise_2d(self.xSize, self.ySize, self.tot_rows, self.tot_cols, zScale=1.0, **other_kwargs)
+            scale_map = np.full((self.tot_rows, self.tot_cols), np.nan)
+            row_edges = np.linspace(0, self.tot_rows, cfg.num_rows + 1).astype(int)
+            col_edges = np.linspace(0, self.tot_cols, cfg.num_cols + 1).astype(int)
+            for r in range(cfg.num_rows):
+                for c in range(cfg.num_cols):
+                    z = np.random.uniform(zscale_cfg[0], zscale_cfg[1])
+                    scale_map[row_edges[r]:row_edges[r+1], col_edges[c]:col_edges[c+1]] = z
+            assert not np.isnan(scale_map).any(), "per-tile zScale map has uncovered pixels"
+            self.heightsamples_float = unit_noise * scale_map
+        else:
+            self.heightsamples_float = self.generate_fractal_noise_2d(self.xSize, self.ySize, self.tot_rows, self.tot_cols, **cfg.TerrainPerlin_kwargs)
         # self.heightsamples_float[self.tot_cols//2 - 100:, :] += 100000
         # self.heightsamples_float[self.tot_cols//2 - 40: self.tot_cols//2 + 40, :] = np.mean(self.heightsamples_float)
         self.heightsamples = (self.heightsamples_float * (1 / cfg.vertical_scale)).astype(np.int16)

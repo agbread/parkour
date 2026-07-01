@@ -689,6 +689,13 @@ class LeggedRobot(BaseTask):
         self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > lin_cmd_cutoff).unsqueeze(1)
         self.commands[env_ids, 2] *= (torch.abs(self.commands[env_ids, 2]) > ang_cmd_cutoff)
 
+        # ponytail: gated standstill injection — make full-zero command in-distribution so the
+        # policy learns to stand still (kills zero-command vibration). Default 0 = unchanged for field/go1.
+        stand_still_prob = getattr(self.cfg.commands, "stand_still_prob", 0.0)
+        if stand_still_prob > 0.:
+            stand_mask = torch.rand(len(env_ids), device=self.device) < stand_still_prob
+            self.commands[env_ids[stand_mask], :3] = 0.
+
     def _compute_torques(self, actions):
         """ Compute torques from actions.
             Actions can be interpreted as position or velocity targets given to a PD controller, or directly as scaled torques.
