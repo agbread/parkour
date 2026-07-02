@@ -180,6 +180,8 @@ class Go2RoughCfg( LeggedRobotCfg ):
             lin_vel_z = -1.0
             ang_vel_xy = -0.05
             orientation = -2.0
+            collision = -1.0 # penalize thigh/calf touching ground (stops kneeling / shank-walking)
+            base_height = -20. # keep body at standing height (stops collapse to low kneeling posture)
             action_rate = -0.05 # back to Jun23 (walked); -0.1 over-suppressed motion
             dof_acc = -2.5e-7
             stop_lin_vel = -0.5 # gentle: only at zero command (was -2.0 which froze the robot)
@@ -194,6 +196,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         feet_air_time_target = 0.25 # lower so trot-frequency short steps aren't penalized (was 0.5)
         feet_clearance_target = 0.08 # target swing-foot height above terrain [m]
         gait_period = 0.5 # trot gait cycle period [s]
+        base_height_target = 0.30 # go2 nominal standing body height above ground [m] (default 1.0 was a placeholder)
         only_positive_rewards = False
         soft_dof_vel_limit = 0.9
         soft_dof_pos_limit = 0.9

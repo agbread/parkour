@@ -1737,8 +1737,11 @@ class LeggedRobot(BaseTask):
         return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
 
     def _reward_base_height(self):
-        # Penalize base height away from target
-        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        # Penalize base height away from target.
+        # Guard: terrain heights are -inf for points out of range (perlin.get_terrain_heights);
+        # unclipped -inf -> +inf base_height -> inf reward -> NaN gradient -> policy NaN crash.
+        measured = torch.nan_to_num(self.measured_heights, nan=0.0, posinf=0.0, neginf=0.0)
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - measured, dim=1)
         return torch.square(base_height - self.cfg.rewards.base_height_target)
     
     def _reward_torques(self):
