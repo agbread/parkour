@@ -171,7 +171,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         class scales:
             tracking_lin_vel = 1.
             tracking_ang_vel = 1.
-            energy_substeps = -2e-5
+            energy_substeps = -1e-5 # halved: -2e-5 was the dominant penalty, forcing lazy stiff-rear-leg + splay
             # gait shaping: force all 4 legs to step (fixes rear-leg dragging)
             feet_air_time = 1.0
             feet_slip = -0.2      # penalize dragging (horizontal foot vel while in contact)
@@ -184,7 +184,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
             dof_acc = -2.5e-7
             stop_lin_vel = -0.5 # gentle: only at zero command (was -2.0 which froze the robot)
             stand_still = -2. # back to Jun23 (-5 froze it)
-            dof_error_named = -1.5 # slight bump from Jun23's -1 for asymmetry (was -3, too strong)
+            dof_error_named = -2.0 # stronger hip-to-default to reduce outward leg splay (was -1.5)
             dof_error = -0.01
             # penalty for hardware safety
             exceed_dof_pos_limits = -0.4
