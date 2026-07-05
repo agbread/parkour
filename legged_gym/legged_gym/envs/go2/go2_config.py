@@ -102,7 +102,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         stiffness = {'joint': 40.}
         damping = {'joint': 1.}
         action_scale = go2_action_scale
-        computer_clip_torque = False
+        computer_clip_torque = True
         motor_clip_torque = True
 
     class asset( LeggedRobotCfg.asset ):
@@ -286,6 +286,7 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
         load_run = None
 
         run_name = "".join(["Go2Flat",
+            ("_computerClip" if Go2RoughCfg.control.computer_clip_torque else ""),
             ("_pEnergy" + np.format_float_scientific(Go2RoughCfg.rewards.scales.energy_substeps, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.energy_substeps != 0 else ""),
             ("_pDofErr" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error != 0 else ""),
             ("_pDofErrN" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error_named, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error_named != 0 else ""),
