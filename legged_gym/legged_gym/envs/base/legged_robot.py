@@ -307,6 +307,10 @@ class LeggedRobot(BaseTask):
             self.episode_sums[name] += rew
         if self.cfg.rewards.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
+        elif getattr(self.cfg.rewards, "clip_reward_min", None) is not None:
+            # physics-blowup guard: a single env's exploding quadratic penalty (-1e4..-1e6/step)
+            # becomes a return outlier that nukes the critic (value_loss ~1e8) and diverges PPO
+            self.rew_buf[:] = torch.clip(self.rew_buf[:], min=self.cfg.rewards.clip_reward_min)
         # add termination reward after clipping
         if "termination" in self.reward_scales:
             rew = self._reward_termination() * self.reward_scales["termination"]
@@ -1852,7 +1856,8 @@ class LeggedRobot(BaseTask):
         # feet outside terrain range give -inf terrain height -> +inf here; treat as target (no penalty)
         feet_heights = torch.nan_to_num(feet_heights, nan=target, posinf=target, neginf=target)
         err = torch.square(feet_heights - target) * scheduled_swing
-        return torch.sum(err, dim=1)
+        # command gate: no clearance penalty at zero command (conflicts with stand_still marching in place)
+        return torch.sum(err, dim=1) * (torch.norm(self.commands[:, :2], dim=1) > 0.1).float()
 
     def _reward_gait_phase(self):
         # Reward matching a trot contact schedule (diagonal pairs step together).

@@ -198,6 +198,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         gait_period = 0.5 # trot gait cycle period [s]
         base_height_target = 0.30 # go2 nominal standing body height above ground [m] (default 1.0 was a placeholder)
         only_positive_rewards = False
+        clip_reward_min = -10. # per-step total-reward floor; normal penalty sum is ~-1, only catches physics blowups
         soft_dof_vel_limit = 0.9
         soft_dof_pos_limit = 0.9
         soft_torque_limit = 0.9
