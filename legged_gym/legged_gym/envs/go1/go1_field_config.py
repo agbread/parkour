@@ -29,8 +29,12 @@ class Go1FieldCfg( A1FieldCfg ):
             latency_range = [0.04-0.0025, 0.04+0.0075] # comment this if it is too hard to train.
 
     class terrain( A1FieldCfg.terrain ):
-        num_rows = 20
-        num_cols = 80
+        num_rows = 16 # walk stage: smaller perlin terrain to fit RAM (20x80 trimesh ate ~96GB)
+        num_cols = 16
+
+        # walk stage uses Perlin terrain (BarrierTrack needs mesh_type=None and is for skills)
+        selected = "TerrainPerlin"
+        mesh_type = None
 
         # curriculum = True # for tilt, crawl, jump, leap
         curriculum = False # for walk
@@ -60,7 +64,7 @@ class Go1FieldCfg( A1FieldCfg ):
         ))
 
         TerrainPerlin_kwargs = dict(
-            zScale= [0.08, 0.15],
+            zScale= 0.15, # constant zScale for walk policy (per a1 config comment); range list breaks perlin broadcast
             frequency= 10,
         )
 

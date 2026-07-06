@@ -1093,10 +1093,12 @@ class BarrierTrack:
         tm_params.static_friction = self.cfg.static_friction
         tm_params.dynamic_friction = self.cfg.dynamic_friction
         tm_params.restitution = self.cfg.restitution
+        vertices = np.ascontiguousarray(trimesh[0], dtype=np.float32)
+        triangles = np.ascontiguousarray(trimesh[1], dtype=np.uint32)
         self.gym.add_triangle_mesh(
             self.sim,
-            trimesh[0].flatten(order= "C"),
-            trimesh[1].flatten(order= "C"),
+            vertices.flatten(order= "C"),
+            triangles.flatten(order= "C"),
             tm_params,
         )
 

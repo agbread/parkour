@@ -195,7 +195,9 @@ class Terrain:
         tm_params.static_friction = self.cfg.static_friction
         tm_params.dynamic_friction = self.cfg.dynamic_friction
         tm_params.restitution = self.cfg.restitution
-        self.gym.add_triangle_mesh(self.sim, self.vertices.flatten(order='C'), self.triangles.flatten(order='C'), tm_params)
+        vertices = np.ascontiguousarray(self.vertices, dtype=np.float32)
+        triangles = np.ascontiguousarray(self.triangles, dtype=np.uint32)
+        self.gym.add_triangle_mesh(self.sim, vertices.flatten(order='C'), triangles.flatten(order='C'), tm_params)
 
     def add_terrain_to_sim(self, gym, sim, device= "cpu"):
         if self.type == "heightfield":
