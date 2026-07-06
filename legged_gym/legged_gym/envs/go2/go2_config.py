@@ -77,7 +77,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
         ang_cmd_cutoff = 0.2
         stand_still_prob = 0.1 # 10% zero-command for standstill learning (was 0.15)
         class ranges( LeggedRobotCfg.commands.ranges ):
-            lin_vel_x = [-1.0, 1.5]
+            lin_vel_x = [-1.0, 1.2] # cap at achievable speed: fixed trot period (0.5s) can't stride 1.5 m/s, asking for it teaches undershooting
             lin_vel_y = [-1., 1.]
             ang_vel_yaw = [-2., 2.]
 
@@ -169,7 +169,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
 
     class rewards( LeggedRobotCfg.rewards ):
         class scales:
-            tracking_lin_vel = 1.
+            tracking_lin_vel = 1.5 # was 1.0: policy settled at 81% tracking @1.2m/s, favoring gait_phase; shift equilibrium toward tracking
             tracking_ang_vel = 1.
             energy_substeps = -1e-5 # halved: -2e-5 was the dominant penalty, forcing lazy stiff-rear-leg + splay
             # gait shaping: force all 4 legs to step (fixes rear-leg dragging)
@@ -292,6 +292,7 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
             ("_pDofErr" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error != 0 else ""),
             ("_pDofErrN" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error_named, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error_named != 0 else ""),
             ("_pStand" + np.format_float_scientific(Go2RoughCfg.rewards.scales.stand_still, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.stand_still != 0 else ""),
+            ("_rTrackLin{:.1f}".format(Go2RoughCfg.rewards.scales.tracking_lin_vel) if Go2RoughCfg.rewards.scales.tracking_lin_vel != 1.0 else ""),
             ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
         ])
 
