@@ -344,6 +344,25 @@ class LeggedRobot(BaseTask):
     def _get_last_actions_obs(self, privileged= False):
         return self.actions
 
+    def _get_gait_period(self):
+        """ Per-env trot period [s]. With gait_period_range set, period shortens linearly with
+        commanded speed (animals raise cadence with speed): full stride room at high cmd,
+        relaxed cadence (no mincing steps) at low cmd. Falls back to constant gait_period.
+        """
+        prange = getattr(self.cfg.rewards, "gait_period_range", None)
+        if prange is None:
+            return torch.full((self.num_envs,), getattr(self.cfg.rewards, "gait_period", 0.5),
+                              dtype=torch.float, device=self.device)
+        p_slow, p_fast = prange
+        vref = getattr(self.cfg.rewards, "gait_period_vref", 1.2)
+        v = torch.norm(self.commands[:, :2], dim=1)
+        return p_slow + (p_fast - p_slow) * torch.clip(v / vref, 0., 1.)
+
+    def _get_gait_clock_obs(self, privileged= False):
+        # sin/cos of the same clock the gait rewards are scored against, so the policy can lock onto it
+        phase = self.gait_phase_buf.unsqueeze(1) * 2 * np.pi
+        return torch.cat([torch.sin(phase), torch.cos(phase)], dim=1)
+
     def _get_height_measurements_obs(self, privileged= False):
         # not tested
         height_offset = getattr(self.cfg.normalization, "height_measurements_offset", -0.5)
@@ -400,6 +419,8 @@ class LeggedRobot(BaseTask):
             segments["dof_vel"] = (self.num_dof,)
         if "last_actions" in components:
             segments["last_actions"] = (self.num_actions,)
+        if "gait_clock" in components:
+            segments["gait_clock"] = (2,) # sin, cos of gait phase
         if "height_measurements" in components:
             assert self.cfg.terrain.measure_heights, "You must set measure_heights to True in terrain config to use height_measurements observation component."
             segments["height_measurements"] = (1, len(self.cfg.terrain.measured_points_x), len(self.cfg.terrain.measured_points_y))
@@ -662,6 +683,9 @@ class LeggedRobot(BaseTask):
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
             self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
+
+        # advance gait clock; integrated (not t/period) so speed-adaptive period changes stay phase-continuous
+        self.gait_phase_buf = (self.gait_phase_buf + self.dt / self._get_gait_period()) % 1.0
 
         # log max power across current env step
         self.max_power_per_timestep = torch.maximum(
@@ -935,6 +959,9 @@ class LeggedRobot(BaseTask):
     def _write_last_actions_noise(self, noise_vec):
         noise_vec[:] = 0.
 
+    def _write_gait_clock_noise(self, noise_vec):
+        noise_vec[:] = 0. # internal clock, exactly known on the real robot too
+
     def _write_height_measurements_noise(self, noise_vec):
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
@@ -992,6 +1019,8 @@ class LeggedRobot(BaseTask):
         self.last_torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
+        # gait clock: integrated phase in [0,1); shared by gait rewards and the gait_clock observation
+        self.gait_phase_buf = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
         self.last_contact_forces = torch.zeros_like(self.contact_forces)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
@@ -1212,6 +1241,8 @@ class LeggedRobot(BaseTask):
         self.last_dof_vel[env_ids] = 0.
         self.last_torques[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
+        # random initial clock offset: policy observes the clock, so it learns to lock on from any phase
+        self.gait_phase_buf[env_ids] = torch.rand(len(env_ids), device=self.device)
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
         self.max_power_per_timestep[env_ids] = 0.
@@ -1830,7 +1861,11 @@ class LeggedRobot(BaseTask):
         contact_filt = torch.logical_or(contact, last_contact) 
         first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
-        air_time_target = getattr(self.cfg.rewards, "feet_air_time_target", 0.5)
+        if getattr(self.cfg.rewards, "gait_period_range", None) is not None:
+            # adaptive cadence: achievable swing time is period/2, so the target must follow it
+            air_time_target = (self._get_gait_period() * 0.5).unsqueeze(1)
+        else:
+            air_time_target = getattr(self.cfg.rewards, "feet_air_time_target", 0.5)
         rew_airTime = torch.sum((self.feet_air_time - air_time_target) * first_contact, dim=1) # reward only on first contact with the ground
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact_filt
@@ -1846,10 +1881,8 @@ class LeggedRobot(BaseTask):
         # Reference-style (agbread/RL_tutorial): enforce swing-foot clearance during the SCHEDULED
         # swing phase (phase-based, directly attacks dragging), quadratic penalty toward target height.
         # Height measured above terrain (robust on uneven ground). Foot order [FL,FR,RL,RR] -> trot.
-        period = getattr(self.cfg.rewards, "gait_period", 0.5)
-        phase = (self.episode_length_buf.float() * self.dt / period) % 1.0
         offsets = torch.tensor([0.0, 0.5, 0.5, 0.0], device=self.device)
-        foot_phase = (phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0
+        foot_phase = (self.gait_phase_buf.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0
         scheduled_swing = foot_phase >= 0.5 # second half of cycle = swing
         target = getattr(self.cfg.rewards, "feet_clearance_target", 0.08)
         feet_heights = self._get_feet_heights()
@@ -1862,10 +1895,8 @@ class LeggedRobot(BaseTask):
     def _reward_gait_phase(self):
         # Reward matching a trot contact schedule (diagonal pairs step together).
         # Foot order from URDF: [FL, FR, RL, RR] -> trot offsets [0, 0.5, 0.5, 0] (FL+RR, FR+RL).
-        period = getattr(self.cfg.rewards, "gait_period", 0.5)
-        phase = (self.episode_length_buf.float() * self.dt / period) % 1.0
         offsets = torch.tensor([0.0, 0.5, 0.5, 0.0], device=self.device)
-        foot_phase = (phase.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0
+        foot_phase = (self.gait_phase_buf.unsqueeze(1) + offsets.unsqueeze(0)) % 1.0
         desired_stance = foot_phase < 0.5 # stance first half of cycle, swing second half
         actual_contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         match = (desired_stance == actual_contact).float()

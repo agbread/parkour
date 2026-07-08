@@ -35,6 +35,7 @@ class Go2RoughCfg( LeggedRobotCfg ):
             "dof_pos",
             "dof_vel",
             "last_actions",
+            "gait_clock", # sin/cos of the gait-reward clock; without it the policy can't lock onto the scored rhythm
             "height_measurements",
         ]
 
@@ -195,7 +196,9 @@ class Go2RoughCfg( LeggedRobotCfg ):
         dof_error_names = ["FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint"]
         feet_air_time_target = 0.25 # lower so trot-frequency short steps aren't penalized (was 0.5)
         feet_clearance_target = 0.08 # target swing-foot height above terrain [m]
-        gait_period = 0.5 # trot gait cycle period [s]
+        gait_period = 0.5 # trot gait cycle period [s]; fallback when gait_period_range is unset
+        gait_period_range = [0.55, 0.35] # speed-adaptive period: relaxed cadence at low cmd, quick steps at high cmd (fixes stride limit without mincing)
+        gait_period_vref = 1.2 # cmd speed [m/s] at which period reaches the fast end
         base_height_target = 0.30 # go2 nominal standing body height above ground [m] (default 1.0 was a placeholder)
         only_positive_rewards = False
         clip_reward_min = -10. # per-step total-reward floor; normal penalty sum is ~-1, only catches physics blowups
@@ -293,6 +296,7 @@ class Go2RoughCfgPPO( LeggedRobotCfgPPO ):
             ("_pDofErrN" + np.format_float_scientific(Go2RoughCfg.rewards.scales.dof_error_named, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.dof_error_named != 0 else ""),
             ("_pStand" + np.format_float_scientific(Go2RoughCfg.rewards.scales.stand_still, precision= 1, trim= "-") if Go2RoughCfg.rewards.scales.stand_still != 0 else ""),
             ("_rTrackLin{:.1f}".format(Go2RoughCfg.rewards.scales.tracking_lin_vel) if Go2RoughCfg.rewards.scales.tracking_lin_vel != 1.0 else ""),
+            ("_adaptGait" if getattr(Go2RoughCfg.rewards, "gait_period_range", None) is not None else ""),
             ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
         ])
 
