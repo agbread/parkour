@@ -78,6 +78,11 @@ class Go2DistillCfg( Go2FieldCfg ):
             latency_resampling_time = 5.0
             refresh_duration = 1/10 # [s]
 
+    class control( Go2FieldCfg.control ):
+        # must match the specialists' training dynamics (see go2_stairs_config.py):
+        # they were (effectively) trained WITHOUT the computer-side torque pre-clip
+        computer_clip_torque = False
+
     class commands( Go2FieldCfg.commands ):
         # a mixture of command sampling and goal_based command update allows only high speed range
         # in x-axis but no limits on y-axis and yaw-axis

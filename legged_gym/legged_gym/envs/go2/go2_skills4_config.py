@@ -26,5 +26,6 @@ class Go2Skills4CfgPPO( Go2StairsCfgPPO ):
             ("_jump{:.2f}-{:.2f}".format(*Go2Skills4Cfg.terrain.BarrierTrack_kwargs["jump"]["height"])),
             ("_pEnergy" + np.format_float_scientific(-Go2Skills4Cfg.rewards.scales.energy_substeps, precision=2)),
             ("_cmdX{:.1f}-{:.1f}".format(*Go2Skills4Cfg.commands.ranges.lin_vel_x)),
+            ("_noGoal" if not Go2Skills4Cfg.commands.is_goal_based else ""),
             ("_from" + "_".join(Go2StairsCfgPPO.runner.load_run.split("/")[-1].split("_")[:2])),
         ])
