@@ -75,6 +75,7 @@ class Go2Node(UnitreeRos2Real):
         if (self.joy_stick_buffer.keys & self.WirelessButtons.Y):
             self.get_logger().info("Y pressed, reset the policy")
             self.task_model.reset()
+            self.reset_gait_clock()
 
 @torch.inference_mode()
 def main(args):

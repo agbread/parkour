@@ -26,6 +26,7 @@ from crc_module import get_crc
 from multiprocessing import Process
 from collections import OrderedDict
 import numpy as np
+import time
 import torch
 
 @torch.jit.script
@@ -461,6 +462,35 @@ class UnitreeRos2Real(Node):
     def _get_commands_obs(self):
         return self.xyyaw_command.unsqueeze(0) # (1, 3)
 
+    def _get_gait_period(self):
+        """ Same speed-adaptive trot period the policy was trained with
+        (legged_robot.py:_get_gait_period), driven by the commanded velocity. """
+        rewards_cfg = self.cfg.get("rewards", {})
+        prange = rewards_cfg.get("gait_period_range", None)
+        if prange is None:
+            return rewards_cfg.get("gait_period", 0.5)
+        p_slow, p_fast = prange
+        vref = rewards_cfg.get("gait_period_vref", 1.2)
+        cmd = getattr(self, "xyyaw_command", None)
+        v = 0. if cmd is None else torch.norm(cmd[:2]).item()
+        return p_slow + (p_fast - p_slow) * min(max(v / vref, 0.), 1.)
+
+    def reset_gait_clock(self):
+        self.gait_phase = 0.0
+        self._last_gait_clock_time = time.monotonic()
+
+    def _get_gait_clock_obs(self):
+        """ sin/cos of the gait phase integrator, advanced by wall-clock time so the
+        onboard clock matches the simulated dt*decimation cadence even if the loop lags. """
+        now = time.monotonic()
+        if not hasattr(self, "gait_phase"):
+            self.gait_phase = 0.0
+        else:
+            self.gait_phase = (self.gait_phase + (now - self._last_gait_clock_time) / self._get_gait_period()) % 1.0
+        self._last_gait_clock_time = now
+        phase = self.gait_phase * 2 * np.pi
+        return torch.tensor([[np.sin(phase), np.cos(phase)]], device= self.model_device, dtype= torch.float32)
+
     def _get_dof_pos_obs(self):
         return self.dof_pos_ - self.default_dof_pos.unsqueeze(0)
 
@@ -509,6 +539,9 @@ class UnitreeRos2Real(Node):
             segments["dof_vel"] = (self.NUM_DOF,)
         if "last_actions" in components:
             segments["last_actions"] = (self.NUM_ACTIONS,)
+        if "gait_clock" in components:
+            # sin/cos of the gait phase, integrated onboard (same order as legged_robot.py)
+            segments["gait_clock"] = (2,)
         if "height_measurements" in components:
             print("Warning: height_measurements is not typically available on the real robot.")
             segments["height_measurements"] = (1, len(self.cfg["terrain"]["measured_points_x"]), len(self.cfg["terrain"]["measured_points_y"]))

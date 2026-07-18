@@ -19,9 +19,12 @@ class Go2DistillCfg( Go2FieldCfg ):
             "dof_pos",
             "dof_vel",
             "last_actions",
+            "gait_clock", # student also observes the clock to imitate the clock-driven walk teacher
             "forward_depth",
         ]
 
+        # must exactly reproduce the mutex teacher's input:
+        # [shared specialist layout (281) | engaging_block (203, selection only)]
         privileged_obs_components = [
             "lin_vel",
             "ang_vel",
@@ -30,7 +33,9 @@ class Go2DistillCfg( Go2FieldCfg ):
             "dof_pos",
             "dof_vel",
             "last_actions",
+            "gait_clock",
             "height_measurements",
+            "engaging_block",
         ]
 
     class terrain( Go2FieldCfg.terrain ):
@@ -43,12 +48,10 @@ class Go2DistillCfg( Go2FieldCfg ):
         curriculum = False
 
         BarrierTrack_kwargs = merge_dict(Go2FieldCfg.terrain.BarrierTrack_kwargs, dict(
-            leap= dict(
-                length= [0.05, 0.8],
-                depth= [0.5, 0.8],
-                height= 0.15, # expected leap height over the gap
-                fake_offset= 0.1,
-            ),
+            options= [
+                "stairsup",
+                "stairsdown",
+            ], # flat-walk segments come from the flat start/run blocks between obstacles
         ))
 
     class sensor( Go2FieldCfg.sensor ):
@@ -80,8 +83,8 @@ class Go2DistillCfg( Go2FieldCfg ):
         # in x-axis but no limits on y-axis and yaw-axis
         lin_cmd_cutoff = 0.2
         class ranges( Go2FieldCfg.commands.ranges ):
-            # lin_vel_x = [0.6, 1.8]
-            lin_vel_x = [-0.6, 2.0]
+            # stay within the flat specialist's training range (cmd cap 1.2, gait vref 1.2)
+            lin_vel_x = [0.3, 1.0]
         
         is_goal_based = True
         class goal_based:
@@ -147,15 +150,14 @@ class Go2DistillCfgPPO( Go2FieldCfgPPO ):
         # update_times_scale = 100
         action_labels_from_sample = False
 
-        teacher_policy_class_name = "EncoderStateAcRecurrent"
-        teacher_ac_path = osp.join(logs_root, "field_go2",
-            "May13_15-02-33_Go2_4skills",
-            "model_58000.pt"
-        )
+        # mutex teacher: walk specialist (idx 0) + stairs specialist (idx 1),
+        # switched by the engaging_block obstacle id (selection-only tail component)
+        teacher_policy_class_name = "ActorCriticTailFieldMutex"
+        teacher_ac_path = None # the mutex loads each sub policy's newest model_*.pt itself
 
-        class teacher_policy( Go2FieldCfgPPO.policy ):
-            num_actor_obs = 48 + 21 * 11
-            num_critic_obs = 48 + 21 * 11
+        class teacher_policy:
+            num_actor_obs = 48 + 2 + 21 * 11 + (1 + 200 + 2) # 484: shared layout 281 + engaging_block 203
+            num_critic_obs = 48 + 2 + 21 * 11 + (1 + 200 + 2)
             num_actions = 12
             obs_segments = OrderedDict([
                 ("lin_vel", (3,)),
@@ -165,8 +167,23 @@ class Go2DistillCfgPPO( Go2FieldCfgPPO ):
                 ("dof_pos", (12,)),
                 ("dof_vel", (12,)),
                 ("last_actions", (12,)), # till here: 3+3+3+3+12+12+12 = 48
+                ("gait_clock", (2,)),
                 ("height_measurements", (1, 21, 11)),
+                ("engaging_block", (1 + 200 + 2,)), # 1 + terrain.max_track_options + block_info_dim
             ])
+
+            sub_policy_class_name = "EncoderStateAcRecurrent"
+            sub_policy_paths = [ # must both be gait_clock-era runs (281-dim shared layout)
+                osp.join(logs_root, "flat_go2",
+                    "Jul08_11-53-50_Go2Flat_computerClip_pEnergy-1e-05_pDofErr-1e-02_pDofErrN-2e+00_pStand-2e+00_rTrackLin1.5_adaptGait_noResume"),
+                osp.join(logs_root, "field_go2",
+                    "REPLACE_WITH_GO2_STAIRS_RUN"), # fill in after training go2_stairs
+            ]
+            obstacle_id_mapping = {9: 1, 10: 1} # stairsup/stairsdown -> stairs policy; others -> walk
+            env_action_scale = 0.5
+            action_smoothing_buffer_len = 3
+            reset_non_selected = "when_skill"
+            cmd_vel_mapping = {} # keep the env's goal-based commands (both specialists trained on them)
 
     class policy( Go2RoughCfgPPO.policy ):
         # configs for estimator module
@@ -214,17 +231,19 @@ class Go2DistillCfgPPO( Go2FieldCfgPPO ):
         if multi_process_:
             pretrain_iterations = -1
             class pretrain_dataset:
-                data_dir = "/opt/parkour/legged_gym/logs/distill_go2_data"
+                data_dir = osp.join(logs_root, "distill_go2_data")
                 dataset_loops = -1
                 random_shuffle_traj_order = True
                 keep_latest_n_trajs = 1500
                 starting_frame_range = [0, 50]
 
         resume = True
+        # student warm start from the stairs specialist: actor side (memory_a/actor/estimator)
+        # is shape-compatible; encoders.0 (depth) and the whole critic side are re-initialized
         load_run = osp.join(logs_root, "field_go2",
-            "Jun01_16-55-48_Go2_5skills_pEnergy2.e-07_pTorques-1.e-07_pLazyStop-3.e+00_pPenD5.e-02_penEasier200_penHarder100_leapHeight2.e-01_motorTorqueClip_fromMay27_20-55-29",
+            "REPLACE_WITH_GO2_STAIRS_RUN", # fill in after training go2_stairs
         )
-        ckpt_manipulator = "replace_encoder0" if "field_go2" in load_run else None
+        ckpt_manipulator = "replace_encoder0_and_critic" if "field_go2" in load_run else None
 
         run_name = "".join(["Go2_",
             ("{:d}skills".format(len(Go2DistillCfg.terrain.BarrierTrack_kwargs["options"]))),

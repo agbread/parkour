@@ -92,16 +92,18 @@ def play(args):
         env_cfg.terrain.max_init_terrain_level = 0
         env_cfg.terrain.num_rows = 4
         env_cfg.terrain.num_cols = 8
-        env_cfg.terrain.BarrierTrack_kwargs["options"] = [
-            "jump",
-            "leap",
-            "down",
-            "hurdle",
-            "tilted_ramp",
-            "stairsup",
-            "discrete_rect",
-            "wave",
-        ]
+        # keep the task's own obstacle options (e.g. go2_stairs/go2_distill: stairsup+stairsdown);
+        # uncomment to force a mixed demo track instead
+        # env_cfg.terrain.BarrierTrack_kwargs["options"] = [
+        #     "jump",
+        #     "leap",
+        #     "down",
+        #     "hurdle",
+        #     "tilted_ramp",
+        #     "stairsup",
+        #     "discrete_rect",
+        #     "wave",
+        # ]
         env_cfg.terrain.BarrierTrack_kwargs["leap"]["fake_offset"] = 0.1
         env_cfg.terrain.BarrierTrack_kwargs["draw_virtual_terrain"] = True
     else:

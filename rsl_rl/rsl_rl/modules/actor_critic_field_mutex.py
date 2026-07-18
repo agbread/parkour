@@ -141,6 +141,112 @@ class ActorCriticFieldMutex(ActorCriticMutex):
         self.resample_cmd_vel_current(dones)
         return super().reset(dones)
     
+class ActorCriticTailFieldMutex(ActorCriticFieldMutex):
+    """ A variant whose observation is [shared sub-policy layout | engaging_block].
+    The trailing engaging_block component is used ONLY for policy selection and is
+    stripped before feeding the sub-policies. This allows sub-policies (e.g.
+    EncoderStateAcRecurrent with height_measurements) trained WITHOUT engaging_block
+    to be loaded unmodified.
+    """
+    def __init__(self,
+            num_actor_obs,
+            num_critic_obs,
+            num_actions,
+            obs_segments= None,
+            privileged_obs_segments= None,
+            obstacle_id_mapping= dict(), # {obstacle_id (barrier_track.track_options_id_dict): sub_policy_idx}, others -> 0
+            **kwargs,
+        ):
+        assert obs_segments is not None and "engaging_block" in obs_segments, \
+            "ActorCriticTailFieldMutex requires obs_segments with an engaging_block component"
+        self.full_obs_segments = obs_segments
+        # json configs may carry the mapping with string keys
+        self.obstacle_id_mapping = {int(k): int(v) for k, v in obstacle_id_mapping.items()}
+        head_segments = OrderedDict([(k, v) for k, v in obs_segments.items() if k != "engaging_block"])
+        self.head_num_obs = int(sum(np.prod(v) for v in head_segments.values()))
+        super().__init__(
+            num_actor_obs= self.head_num_obs,
+            num_critic_obs= self.head_num_obs,
+            num_actions= num_actions,
+            obs_segments= head_segments,
+            privileged_obs_segments= None,
+            **kwargs,
+        )
+        assert max(self.obstacle_id_mapping.values(), default= 0) < len(self.submodules), \
+            "obstacle_id_mapping points to a sub policy index that is not loaded"
+
+    def get_policy_selection(self, observations):
+        """ Select by obstacle id from the trailing engaging_block one-hot
+        (layout: [distance(1), onehot(max_track_options), block_info(2)]).
+        Returns bool (N, ..., num_submodules); unmapped ids and id 0 select sub policy 0 (walk).
+        """
+        obs_slice = get_obs_slice(self.full_obs_segments, "engaging_block")
+        engaging_block_obs = observations[..., obs_slice[0]].reshape(*observations.shape[:-1], *obs_slice[1])
+        obstacle_id_onehot = engaging_block_obs[..., 1:-2]
+        selection = torch.zeros(
+            *observations.shape[:-1], len(self.submodules),
+            dtype= torch.bool, device= observations.device,
+        )
+        for obstacle_id, sub_idx in self.obstacle_id_mapping.items():
+            selection[..., sub_idx] |= obstacle_id_onehot[..., obstacle_id] > 0.5
+        selection[..., 0] |= ~selection.any(dim= -1)
+        return selection
+
+    def override_cmd_vel(self, observations, policy_selection):
+        """ Component-wise layout version: write the forward velocity command into the
+        "commands" segment (index 0) instead of assuming a "proprioception" block.
+        """
+        obs_slice = get_obs_slice(self.obs_segments, "commands")
+        commands_obs = observations[..., obs_slice[0]].reshape(*observations.shape[:-1], *obs_slice[1])
+        for idx, vel in self.cmd_vel_current.items():
+            idx = int(idx)
+            selected_commands = commands_obs[policy_selection[..., idx]]
+            selected_commands[..., 0] = vel[policy_selection[..., idx]] if torch.is_tensor(vel) else vel
+            cmd_scale = self.cmd_scales[idx]["commands"]
+            selected_commands[..., 0] *= cmd_scale[0] if isinstance(cmd_scale, (tuple, list)) else cmd_scale
+            commands_obs[policy_selection[..., idx]] = selected_commands
+        observations = torch.cat([
+            observations[..., :obs_slice[0].start],
+            commands_obs.reshape(*observations.shape[:-1], -1),
+            observations[..., obs_slice[0].stop:],
+        ], dim= -1)
+        return observations
+
+    @torch.no_grad()
+    def act_inference(self, observations):
+        # same flow as ActorCriticFieldMutex.act_inference, but sub-policies only
+        # receive the head of the observation (engaging_block tail stripped)
+        policy_selection = self.get_policy_selection(observations)
+        if self.action_smoothing_buffer is None:
+            self.action_smoothing_buffer = torch.zeros(
+                self.action_smoothing_buffer_len,
+                *policy_selection.shape,
+                device= policy_selection.device,
+                dtype= torch.float,
+            ) # (len, N, ..., selection)
+        self.action_smoothing_buffer = torch.cat([
+            self.action_smoothing_buffer[1:],
+            policy_selection.unsqueeze(0),
+        ], dim= 0) # put the new one at the end
+        sub_observations = observations[..., :self.head_num_obs]
+        sub_observations = self.recover_last_action(sub_observations, policy_selection)
+        if self.cmd_vel_mapping:
+            sub_observations = self.override_cmd_vel(sub_observations, policy_selection)
+        outputs = [p.act_inference(sub_observations) for p in self.submodules]
+        output = torch.zeros_like(outputs[0])
+        for idx, out in enumerate(outputs):
+            output += out * getattr(self, "subpolicy_action_scale_{:d}".format(idx)) / self.env_action_scale \
+                 * self.action_smoothing_buffer[..., idx].mean(dim= 0).unsqueeze(-1)
+            # choose one or none reset method
+            if self.reset_non_selected == "all" or self.reset_non_selected == True:
+                self.submodules[idx].reset(self.action_smoothing_buffer[..., idx].sum(0) == 0)
+            elif self.reset_non_selected == "when_skill" and idx > 0:
+                self.submodules[idx].reset(torch.logical_and(
+                    ~policy_selection[..., idx],
+                    ~policy_selection[..., 0],
+                ))
+        return output
+
 class ActorCriticClimbMutex(ActorCriticFieldMutex):
     """ A variant to handle jump-up and jump-down with seperate policies
     Jump-down policy will be the last submodule in the list
