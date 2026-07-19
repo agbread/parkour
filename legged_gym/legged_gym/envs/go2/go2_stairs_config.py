@@ -43,6 +43,15 @@ class Go2StairsCfg( Go2FieldCfg ):
             ],
         ))
 
+    class rewards( Go2FieldCfg.rewards ):
+        class scales( Go2FieldCfg.rewards.scales ):
+            # net per-step reward must stay positive for a surviving robot, or PPO
+            # converges to instant-suicide (die fast -> less accumulated penalty).
+            # Round-4 failure mode: ep length 500->64/13, "reward" -12 -> -0.3.
+            # Same cure as upstream skill configs (a1_crawl etc.): alive bonus.
+            alive = 2.0
+        clip_reward_min = -10. # physics-spike guard, same as the flat runs
+
     class commands( Go2FieldCfg.commands ):
         # single-skill training uses plain forward velocity commands (a1/go1 skill recipe).
         # goal-based steering (x_stop_by_yaw_threshold) kept zeroing the x command and
@@ -73,6 +82,7 @@ class Go2StairsCfgPPO( Go2FieldCfgPPO ):
             ("_pEnergy" + np.format_float_scientific(-Go2StairsCfg.rewards.scales.energy_substeps, precision=2)),
             ("_pPenD" + np.format_float_scientific(-Go2StairsCfg.rewards.scales.penetrate_depth, precision=2)),
             ("_cmdX{:.1f}-{:.1f}".format(*Go2StairsCfg.commands.ranges.lin_vel_x)),
+            ("_rAlive{:.1f}".format(Go2StairsCfg.rewards.scales.alive)),
             ("_noGoal" if not Go2StairsCfg.commands.is_goal_based else ""),
             ("_noResume" if not resume else "_from" + "_".join(load_run.split("/")[-1].split("_")[:2])),
         ])
