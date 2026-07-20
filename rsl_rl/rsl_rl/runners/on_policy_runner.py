@@ -228,7 +228,7 @@ class OnPolicyRunner:
                 f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
                     'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
             )
-            for k. v in locs["losses"].items():
+            for k, v in locs["losses"].items():
                 log_string += f"""{k:>{pad}} {v.item():.4f}\n"""
             log_string += (
                 f"""{'Value function loss:':>{pad}} {locs["losses"]['value_loss']:.4f}\n"""
