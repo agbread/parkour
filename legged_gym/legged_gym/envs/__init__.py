@@ -50,6 +50,7 @@ from .go2.go2_distill_config import Go2DistillCfg, Go2DistillCfgPPO
 from .go2.go2_stairs_config import Go2StairsCfg, Go2StairsCfgPPO
 from .go2.go2_skills4_config import Go2Skills4Cfg, Go2Skills4CfgPPO
 from .go2.go2_stairsdown_config import Go2StairsDownCfg, Go2StairsDownCfgPPO
+from .go2.go2_field4_config import Go2Field4Cfg, Go2Field4CfgPPO
 
 
 import os
@@ -69,6 +70,7 @@ task_registry.register( "go2_distill", RobotFieldNoisy, Go2DistillCfg(), Go2Dist
 task_registry.register( "go2_stairs", RobotFieldNoisy, Go2StairsCfg(), Go2StairsCfgPPO() )
 task_registry.register( "go2_skills4", RobotFieldNoisy, Go2Skills4Cfg(), Go2Skills4CfgPPO() )
 task_registry.register( "go2_stairsdown", RobotFieldNoisy, Go2StairsDownCfg(), Go2StairsDownCfgPPO() )
+task_registry.register( "go2_field4", RobotFieldNoisy, Go2Field4Cfg(), Go2Field4CfgPPO() )
 
 ## The following tasks are for the convinience of opensource
 from .a1.a1_remote_config import A1RemoteCfg, A1RemoteCfgPPO
