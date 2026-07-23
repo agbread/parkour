@@ -51,13 +51,13 @@ repo root:
 
 | Slot | Path under `legged_gym/logs/` | Needed files |
 |---|---|---|
-| 0 — walk (flat blocks) | `field_go2/Jul23_08-02-08_Go2WalkField_stairsup-stairsdown_cmdX0.3-1.0_rTrackLin1.5_rAirTime1.0_spawnYaw0.3_flatRewards_fromJul08_11-53-50/` | newest `model_*.pt` + `config.json` |
-| 1 — obstacle (stairs) | `field_go2/Jul21_03-46-49_Go2Field4_down-jump-stairsup-stairsdown_zScale0.03_stairLen0.20_May13recipe_from260511_padGaitClock/` | newest `model_*.pt` + `config.json` |
+| 0 — walk (flat blocks) | `field_go2/Jul23_08-02-08_Go2WalkField_stairsup-stairsdown_cmdX0.3-1.0_rTrackLin1.5_rAirTime1.0_spawnYaw0.3_flatRewards_fromJul08_11-53-50/` | `model_20000.pt` + `config.json` |
+| 1 — obstacle (stairs) | `field_go2/Jul23_10-36-50_Go2Field4Gait_down-jump-stairsup-stairsdown_rAirTime3.0_fromJul23_08-32-17_padGaitClock/` | `model_44000.pt` + `config.json` |
 
 ~18 MB each. `ActorCriticMutex` reads only the newest `model_*.pt` (string-sorted) and
 `config.json` from each directory, so intermediate checkpoints do not need to travel.
 
-**Do not substitute the unpadded `Jul21_03-46-49_...` directory for slot 1.** See below.
+**Do not substitute an unpadded directory for slot 1.** See below.
 
 ---
 
@@ -79,7 +79,7 @@ To regenerate:
 
 ```bash
 python legged_gym/scripts/pad_gait_clock.py \
-  legged_gym/logs/field_go2/Jul21_03-46-49_Go2Field4_down-jump-stairsup-stairsdown_zScale0.03_stairLen0.20_May13recipe_from260511 \
+  legged_gym/logs/field_go2/Jul23_10-36-50_Go2Field4Gait_down-jump-stairsup-stairsdown_rAirTime3.0_fromJul23_08-32-17 \
   --reference legged_gym/logs/field_go2/Jul23_08-02-08_Go2WalkField_.../model_20000.pt
 ```
 
@@ -133,16 +133,18 @@ terrain-level spawn, fixed 0.8 m/s command, 1500 steps:
 
 | Block | Sub-policy used | world vx | body vx | stalled | steps/s/foot | air time |
 |---|---|---|---|---|---|---|
-| flat | walk 100% | 0.51 | 0.50 | 20.4% | 2.40 | 0.236 s |
-| stairsup | obstacle 100% | 0.69 | 0.74 | 7.2% | 4.38 | 0.145 s |
-| stairsdown | obstacle 100% | 0.63 | 0.69 | 11.8% | 4.63 | 0.143 s |
+| flat | walk 100% | 0.52 | 0.52 | 20.9% | 2.39 | 0.241 s |
+| stairsup | obstacle 100% | 0.68 | 0.72 | 7.9% | 3.93 | 0.164 s |
+| stairsdown | obstacle 100% | 0.60 | 0.66 | 13.9% | 3.86 | 0.165 s |
+
+`n_obstacle_passed` 0.647, `num_terminated` 1.318 per reset.
 
 Selection is exact — every stairs step uses the obstacle policy, every flat step the walk
 policy — and there is no dead zone at the handover. "stalled" = instantaneous forward speed
 below 30% of the command.
 
-Note the flat numbers came from an intermediate checkpoint (1000 of 5000 fine-tune
-iterations); the finished run should track closer to the 0.80 command.
+Flat still tracks 0.52 against a 0.80 command with a fifth of steps stalled. That is the
+weakest number in the table and the obvious thing to improve if the student inherits it.
 
 **Caveat when measuring:** use body-frame `base_lin_vel[:, 0]`, or world `root_states[:, 7]`
 only where robots are aligned with +x. Averaging world-frame x over randomly-yawed robots
@@ -152,29 +154,37 @@ cannot climb (0.08 m/s), which is not a gait result.
 
 ---
 
-## Known quality gap, not a blocker
+## Gait history behind slot 1 (why the run has "Gait" in its name)
 
-The obstacle specialist takes ~4.4 steps/s/foot with 0.14 s of air time on stairs, against
-2.40 steps/s and 0.236 s for the walk policy — visibly frantic legs, and the user noticed. It
-also folds the calf close to the hard limit (-2.7227 rad) on 36.6% of descent steps, which is
-functional for clearing edges but worth watching for knee torque on hardware (peak torque
-already reaches 45.3 Nm against a 45.43 Nm motor limit).
+The obstacle specialist originally stepped at ~4.5 touchdowns/s/foot with 0.13 s of air time
+— visibly frantic legs next to the walk policy's 2.4/0.24, and the user noticed. Its May13
+recipe carries no gait shaping at all, so cadence is simply not in the objective and did not
+budge over 20k iterations (4.54 / 4.35 / 4.50 steps/s at checkpoints 20k / 30k / 40k). Those
+terms were removed on purpose: `alive` plus gait shaping is what made an earlier run freeze at
+descent edges and never learn to go down stairs.
 
-Cause: the May13 recipe carries no gait shaping at all, and gait quality is simply not in its
-objective — 20k extra iterations moved cadence not at all (4.54 / 4.35 / 4.50 steps/s at
-20k / 30k / 40k). Those terms were removed deliberately: `alive` plus gait shaping is what
-made an earlier run freeze at descent edges and never learn to go down stairs.
+`go2_field4_gait_config.py` adds `feet_air_time` and nothing else, in two stages:
 
-A fine-tune adding only `feet_air_time` (`go2_field4_gait_config.py`) was running when this
-was written. If it succeeded, slot 1 should be re-padded from that run instead; if stair
-curriculum levels dropped below the Jul21 baseline (stairsup 3.1 / stairsdown 3.7), it was
-abandoned and Jul21 stands. **Check with the user which one is current before collecting.**
+| | stairsup steps/s/foot | stairsup air time |
+|---|---|---|
+| Jul21 baseline | 4.50 | 0.131 s |
+| scale 1.0, +2000 iters | 4.36 | 0.138 s |
+| scale 3.0, +2000 iters | 3.78 | 0.156 s |
 
-Only `feet_air_time` was added, because it is the one gait term that needs no clock: the other
+Scale 1.0 barely moved it — and much of its shrinking penalty came from taking fewer steps
+rather than longer swings, since the term sums over touchdowns. Stair curriculum had headroom
+at that point, so the second stage resumed from it at 3.0. Final stair levels stayed at the
+baseline (stairsup ~3.2, stairsdown ~4.0 vs 3.1 / 3.7).
+
+Only `feet_air_time` was used, because it is the one gait term that needs no clock: the other
 two (`gait_phase`, `feet_clearance`) score against `gait_phase_buf`, which is randomized at
 reset and unobservable without the `gait_clock` input — rewarding alignment to it would be
 unlearnable, and adding that input would change the observation layout and break both the warm
 start and the padding.
+
+Still worth watching on hardware: the policy folds the calf near its hard limit (-2.7227 rad)
+on ~37% of descent steps. Functional for clearing edges, but peak torque already reaches
+45.3 Nm against a 45.43 Nm motor limit.
 
 ---
 

@@ -166,12 +166,15 @@ logs_root = osp.join(osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath
 # This run is that policy re-trained on the field track with its reward set untouched.
 walk_run_ = osp.join(logs_root, "field_go2",
     "Jul23_08-02-08_Go2WalkField_stairsup-stairsdown_cmdX0.3-1.0_rTrackLin1.5_rAirTime1.0_spawnYaw0.3_flatRewards_fromJul08_11-53-50")
-# Obstacle blocks: the May13-recipe 4-skill oracle (down/jump/stairsup/stairsdown).
+# Obstacle blocks: the May13-recipe 4-skill oracle (down/jump/stairsup/stairsdown), then
+# fine-tuned with feet_air_time to fix its frantic cadence (go2_field4_gait_config.py).
+# On stairsup that took it from 4.50 to 3.78 touchdowns/s/foot and 0.131 to 0.156 s of air
+# time, with stair curriculum levels held at the pre-fine-tune baseline.
 # Trained in the original obs space (no gait_clock), so its checkpoint carries two zero
-# input columns inserted at 48:50 by scripts/pad_gait_clock.py. Verified numerically
-# identical to the unpadded original (max action difference 0.0).
+# input columns inserted at 48:50 by scripts/pad_gait_clock.py. Padding was verified
+# numerically identical to the unpadded original (max action difference 0.0).
 obstacle_run_ = osp.join(logs_root, "field_go2",
-    "Jul21_03-46-49_Go2Field4_down-jump-stairsup-stairsdown_zScale0.03_stairLen0.20_May13recipe_from260511_padGaitClock")
+    "Jul23_10-36-50_Go2Field4Gait_down-jump-stairsup-stairsdown_rAirTime3.0_fromJul23_08-32-17_padGaitClock")
 class Go2DistillCfgPPO( Go2FieldCfgPPO ):
     class algorithm( Go2FieldCfgPPO.algorithm ):
         entropy_coef = 0.0
