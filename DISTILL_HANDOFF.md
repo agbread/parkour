@@ -143,8 +143,47 @@ Selection is exact — every stairs step uses the obstacle policy, every flat st
 policy — and there is no dead zone at the handover. "stalled" = instantaneous forward speed
 below 30% of the command.
 
-Flat still tracks 0.52 against a 0.80 command with a fifth of steps stalled. That is the
-weakest number in the table and the obvious thing to improve if the student inherits it.
+### What the flat 0.52 average actually is
+
+Not uniform slowness — intermittent stalls. Per-step forward speed distribution at the same
+0.8 m/s command:
+
+| Block | mean | p10 | p25 | median | p75 | p90 | steps at >=80% of command |
+|---|---|---|---|---|---|---|---|
+| flat | 0.56 | 0.00 | 0.39 | 0.66 | 0.77 | 0.88 | 54% |
+| stairsup | 0.77 | 0.56 | 0.73 | 0.80 | 0.89 | 0.98 | 87% |
+| stairsdown | 0.69 | 0.07 | 0.75 | 0.75 | 0.84 | 0.96 | 78% |
+
+On flat the median is 0.66 and the upper quartile 0.77, so when it is moving it is near the
+command; but p10 is 0.00, i.e. it is fully stopped for at least a tenth of the time, and that
+is what drags the mean down. Stairs track the command *better* than flat.
+
+### Per-level success (uniform spawn, 256 envs, ~3000 steps, two independent runs agreeing)
+
+"finished" = cleared the obstacle block and ran off the end of the track.
+
+| level | riser | tread | steps | stairsup | stairsdown |
+|---|---|---|---|---|---|
+| 0 | 0.10 m | 0.20 m | 3 | 75% | **0%** |
+| 1 | 0.12 m | 0.22 m | 5 | 68% | **36%** |
+| 2 | 0.14 m | 0.24 m | 7 | 79% | 96% |
+| 3 | 0.17 m | 0.27 m | 8 | 85% | 62% |
+| 4 | 0.19 m | 0.29 m | 10 | 60% | 85% |
+| 5 | 0.21 m | 0.31 m | 12 | 60% | 56% |
+| 6 | 0.23 m | 0.33 m | 14 | 67% | 59% |
+| 7 | 0.26 m | 0.36 m | 15 | 72% | 72% |
+| 8 | 0.28 m | 0.38 m | 17 | 64% | 59% |
+| 9 | 0.30 m | 0.40 m | 19 | 84% | 62% |
+
+Ascent holds 60-85% with no degradation up to 30 cm risers. Descent holds 56-96% from level 2
+up. **Descent below a 14 cm riser is a hole**: at level 0 the robot reaches x = 2.55 m and
+falls, the obstacle block starting at 2.40 m — it goes over the first shallow edge at speed
+and trips, rather than freezing. Reproduced twice with the same numbers.
+
+A plausible cause is training exposure: `max_init_terrain_level = 2`, so levels 0-1 are only
+ever reached by curriculum demotion, and a policy that succeeds at level 2+ is rarely demoted
+there. It has not been confirmed. Note that typical building stairs (15-19 cm risers) land at
+levels 3-5, inside the working range; the hole matters for curbs and single shallow steps.
 
 **Caveat when measuring:** use body-frame `base_lin_vel[:, 0]`, or world `root_states[:, 7]`
 only where robots are aligned with +x. Averaging world-frame x over randomly-yawed robots
