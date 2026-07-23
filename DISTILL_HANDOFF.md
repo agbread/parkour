@@ -57,6 +57,18 @@ repo root:
 ~18 MB each. `ActorCriticMutex` reads only the newest `model_*.pt` (string-sorted) and
 `config.json` from each directory, so intermediate checkpoints do not need to travel.
 
+Both are packed in `go2_teacher_subpolicies.tar.gz` (32 MB) with the paths above baked in.
+Unpack it at the repository root, then confirm the config resolves them:
+
+```bash
+tar xzf go2_teacher_subpolicies.tar.gz          # run from the repo root
+python -c "
+from legged_gym.envs.go2.go2_distill_config import Go2DistillCfgPPO as P
+import os
+for i, p in enumerate(P.algorithm.teacher_policy.sub_policy_paths):
+    print(i, os.path.isdir(p), [f for f in os.listdir(p) if 'model' in f])"
+```
+
 **Do not substitute an unpadded directory for slot 1.** See below.
 
 ---
