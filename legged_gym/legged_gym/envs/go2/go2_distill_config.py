@@ -100,6 +100,19 @@ class Go2DistillCfg( Go2FieldCfg ):
             follow_cmd_cutoff = True
             x_stop_by_yaw_threshold = 1. # stop when yaw is over this threshold [rad]
 
+    class domain_rand( Go2FieldCfg.domain_rand ):
+        # legged_robot.py:813 falls back to [-pi, pi] when "yaw" is absent, so the field configs
+        # spawn every robot facing a random direction. With goal-based commands that means
+        # x_stop_by_yaw_threshold fires until the robot turns back onto the track: measured 17%
+        # of flat-block steps had the forward command forced to 0. Spawning aligned removes it
+        # entirely (0.0%) and lifts flat-block tracking from 0.54 to 0.66 m/s at a 0.80 command.
+        # Kept as a small range rather than 0 so the student still sees heading corrections.
+        init_base_rot_range = dict(
+            roll= Go2FieldCfg.domain_rand.init_base_rot_range["roll"],
+            pitch= Go2FieldCfg.domain_rand.init_base_rot_range["pitch"],
+            yaw= [-0.3, 0.3],
+        )
+
     class normalization( Go2FieldCfg.normalization ):
         class obs_scales( Go2FieldCfg.normalization.obs_scales ):
             forward_depth = 1.0
@@ -141,6 +154,24 @@ class Go2DistillCfg( Go2FieldCfg ):
         no_camera = False
     
 logs_root = osp.join(osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))), "logs")
+# --- mutex teacher sub-policies -------------------------------------------------------
+# Both are loaded by ActorCriticMutex, which reads each directory's newest model_*.pt plus
+# its config.json (policy kwargs / obs_scales / action_scale). Both must expose the same
+# 281-dim observation layout: [proprio 48 | gait_clock 2 | height_measurements 231].
+#
+# Walk (flat blocks). NOT the flat_go2/Jul08 run: that one was trained on TerrainPerlin with
+# zScale=0.0, so its height input was effectively constant (min +0.249) and the field track's
+# varying map (min -5.0, saturated) is out of distribution -- measured 0.13 m/s and 40%
+# shin/body contact on the very flat blocks where the obstacle policy walks at 0.69 m/s.
+# This run is that policy re-trained on the field track with its reward set untouched.
+walk_run_ = osp.join(logs_root, "field_go2",
+    "Jul23_08-02-08_Go2WalkField_stairsup-stairsdown_cmdX0.3-1.0_rTrackLin1.5_rAirTime1.0_spawnYaw0.3_flatRewards_fromJul08_11-53-50")
+# Obstacle blocks: the May13-recipe 4-skill oracle (down/jump/stairsup/stairsdown).
+# Trained in the original obs space (no gait_clock), so its checkpoint carries two zero
+# input columns inserted at 48:50 by scripts/pad_gait_clock.py. Verified numerically
+# identical to the unpadded original (max action difference 0.0).
+obstacle_run_ = osp.join(logs_root, "field_go2",
+    "Jul21_03-46-49_Go2Field4_down-jump-stairsup-stairsdown_zScale0.03_stairLen0.20_May13recipe_from260511_padGaitClock")
 class Go2DistillCfgPPO( Go2FieldCfgPPO ):
     class algorithm( Go2FieldCfgPPO.algorithm ):
         entropy_coef = 0.0
@@ -178,12 +209,7 @@ class Go2DistillCfgPPO( Go2FieldCfgPPO ):
             ])
 
             sub_policy_class_name = "EncoderStateAcRecurrent"
-            sub_policy_paths = [ # must both be gait_clock-era runs (281-dim shared layout)
-                osp.join(logs_root, "flat_go2",
-                    "Jul08_11-53-50_Go2Flat_computerClip_pEnergy-1e-05_pDofErr-1e-02_pDofErrN-2e+00_pStand-2e+00_rTrackLin1.5_adaptGait_noResume"),
-                osp.join(logs_root, "field_go2",
-                    "REPLACE_WITH_GO2_STAIRS_RUN"), # fill in after training go2_stairs
-            ]
+            sub_policy_paths = [walk_run_, obstacle_run_] # index must match obstacle_id_mapping
             obstacle_id_mapping = {9: 1, 10: 1} # stairsup/stairsdown -> stairs policy; others -> walk
             env_action_scale = 0.5
             action_smoothing_buffer_len = 3
@@ -243,11 +269,9 @@ class Go2DistillCfgPPO( Go2FieldCfgPPO ):
                 starting_frame_range = [0, 50]
 
         resume = True
-        # student warm start from the stairs specialist: actor side (memory_a/actor/estimator)
+        # student warm start from the obstacle specialist: actor side (memory_a/actor/estimator)
         # is shape-compatible; encoders.0 (depth) and the whole critic side are re-initialized
-        load_run = osp.join(logs_root, "field_go2",
-            "REPLACE_WITH_GO2_STAIRS_RUN", # fill in after training go2_stairs
-        )
+        load_run = obstacle_run_
         ckpt_manipulator = "replace_encoder0_and_critic" if "field_go2" in load_run else None
 
         run_name = "".join(["Go2_",
