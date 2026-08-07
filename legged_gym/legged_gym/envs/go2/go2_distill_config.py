@@ -275,6 +275,10 @@ class Go2DistillCfgPPO( Go2FieldCfgPPO ):
         # student warm start from the obstacle specialist: actor side (memory_a/actor/estimator)
         # is shape-compatible; encoders.0 (depth) and the whole critic side are re-initialized
         load_run = obstacle_run_
+        # Go2FieldCfgPPO.runner pins checkpoint = 8000, which does not exist in the padded
+        # obstacle run (it holds model_44000.pt only). -1 takes the newest model in the dir,
+        # matching what ActorCriticMutex loads for the same run as teacher slot 1.
+        checkpoint = -1
         ckpt_manipulator = "replace_encoder0_and_critic" if "field_go2" in load_run else None
 
         run_name = "".join(["Go2_",
