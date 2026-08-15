@@ -94,18 +94,26 @@ def play(args):
         env_cfg.terrain.num_cols = 8
         # keep the task's own obstacle options (e.g. go2_stairs/go2_distill: stairsup+stairsdown);
         # uncomment to force a mixed demo track instead
-        # env_cfg.terrain.BarrierTrack_kwargs["options"] = [
-        #     "jump",
-        #     "leap",
-        #     "down",
-        #     "hurdle",
-        #     "tilted_ramp",
-        #     "stairsup",
-        #     "discrete_rect",
-        #     "wave",
-        # ]
+        env_cfg.terrain.BarrierTrack_kwargs["options"] = [
+            # "jump",
+            # "leap",
+            # "down",
+            # "hurdle",
+            # "tilted_ramp",
+            "stairsup",
+            # "stairsdown",
+            # "discrete_rect",
+            # "wave",
+        ]
         env_cfg.terrain.BarrierTrack_kwargs["leap"]["fake_offset"] = 0.1
         env_cfg.terrain.BarrierTrack_kwargs["draw_virtual_terrain"] = True
+        # With both perlin flags off, add_plane_to_sim() lays a 2cm slab over the whole map at
+        # z=0, which buries anything descending below it (stairsdown, "down"): the robot walks
+        # on the slab and the obstacle is invisible. Turning them on selects the border-terrain
+        # branch instead. Go2's TerrainPerlin zScale is 0.0, so no roughness is actually added --
+        # the tracks stay exactly as flat as they were during distillation.
+        env_cfg.terrain.BarrierTrack_kwargs["add_perlin_noise"] = True
+        env_cfg.terrain.BarrierTrack_kwargs["border_perlin_noise"] = True
     else:
         env_cfg.env.num_envs = min(env_cfg.env.num_envs, 1)
         env_cfg.env.episode_length_s = 60
@@ -118,7 +126,7 @@ def play(args):
     # env_cfg.asset.fix_base_link = True
     env_cfg.env.episode_length_s = 1000
     env_cfg.commands.resampling_time = int(1e16)
-    env_cfg.commands.ranges.lin_vel_x = [1.2, 1.2]
+    env_cfg.commands.ranges.lin_vel_x = [0.8, 0.8]
     env_cfg.domain_rand.push_robots = False
     env_cfg.domain_rand.init_base_pos_range = dict(
         x= [0.6, 0.6],
@@ -136,7 +144,12 @@ def play(args):
         env_cfg.terrain.BarrierTrack_kwargs["draw_virtual_terrain"] = True
     train_cfg.runner.resume = (args.load_run is not None)
     train_cfg.runner_class_name = "OnPolicyRunner"
-    
+    # ckpt_manipulator is a warm-start device (it swaps parts of the checkpoint for untrained
+    # weights, e.g. go2_distill's replace_encoder0_and_critic). Its condition is evaluated on the
+    # config's own load_run, so --load_run does not clear it; at playback we always want the
+    # checkpoint exactly as saved.
+    train_cfg.runner.ckpt_manipulator = None
+
     if args.no_throw:
         env_cfg.init_state.pos[2] = 0.4
         env_cfg.domain_rand.init_base_pos_range["x"] = [0.4, 0.4]
@@ -148,9 +161,12 @@ def play(args):
         env_cfg.domain_rand.init_base_vel_range = [0., 0.]
         env_cfg.domain_rand.init_dof_pos_ratio_range = [1., 1.]
 
-    # default camera position
-    # env_cfg.viewer.lookat = [0.6, 1.2, 0.5]
-    # env_cfg.viewer.pos = [0.6, 0., 0.5]
+    # default camera position. Under CAMERA_FOLLOW the camera sits at robot + (pos - lookat)
+    # and always looks at the robot, so only the difference matters: +x is ahead of the robot,
+    # +z is above it. This one looks back and down from in front, which keeps a descent in frame
+    # (a purely horizontal offset puts the stairs below the lower edge of the view).
+    env_cfg.viewer.pos = [-2.0, 0., 1.2]
+    env_cfg.viewer.lookat = [0., 0., 0.]
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)

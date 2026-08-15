@@ -36,14 +36,14 @@ class Go2Field4Cfg( Go2FieldCfg ):
                 "stairsdown",
             ],
             stairsup= dict(
-                height= [0.1, 0.3],
+                height= [0.15, 0.15],
                 length= [0.2, 0.2], # fixed narrow tread (May13); [0.2, 0.4] diluted the hard case
                 residual_distance= 0.05,
                 num_steps= [3, 19],
                 num_steps_curriculum= True,
             ),
             stairsdown= dict(
-                height= [0.1, 0.3],
+                height= [0.15, 0.15],
                 length= [0.2, 0.2],
                 num_steps= [3, 19],
                 num_steps_curriculum= True,
