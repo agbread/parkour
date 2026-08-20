@@ -53,6 +53,8 @@ from .go2.go2_stairsdown_config import Go2StairsDownCfg, Go2StairsDownCfgPPO
 from .go2.go2_field4_config import Go2Field4Cfg, Go2Field4CfgPPO
 from .go2.go2_walkfield_config import Go2WalkFieldCfg, Go2WalkFieldCfgPPO
 from .go2.go2_field4_gait_config import Go2Field4GaitCfg, Go2Field4GaitCfgPPO
+from .go2.go2_walkfield_speed_config import Go2WalkFieldSpeedCfg, Go2WalkFieldSpeedCfgPPO
+from .go2.go2_stairs_target_config import Go2StairsTargetCfg, Go2StairsTargetCfgPPO
 
 
 import os
@@ -75,6 +77,8 @@ task_registry.register( "go2_stairsdown", RobotFieldNoisy, Go2StairsDownCfg(), G
 task_registry.register( "go2_field4", RobotFieldNoisy, Go2Field4Cfg(), Go2Field4CfgPPO() )
 task_registry.register( "go2_walkfield", RobotFieldNoisy, Go2WalkFieldCfg(), Go2WalkFieldCfgPPO() )
 task_registry.register( "go2_field4_gait", RobotFieldNoisy, Go2Field4GaitCfg(), Go2Field4GaitCfgPPO() )
+task_registry.register( "go2_walkfield_speed", RobotFieldNoisy, Go2WalkFieldSpeedCfg(), Go2WalkFieldSpeedCfgPPO() )
+task_registry.register( "go2_stairs_target", RobotFieldNoisy, Go2StairsTargetCfg(), Go2StairsTargetCfgPPO() )
 
 ## The following tasks are for the convinience of opensource
 from .a1.a1_remote_config import A1RemoteCfg, A1RemoteCfgPPO

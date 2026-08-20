@@ -258,7 +258,7 @@ class OnPolicyRunner:
     def load(self, path, load_optimizer=True):
         # map_location: checkpoints carry the device they were saved from (e.g. cuda:2 on a
         # multi-GPU training box), which fails to deserialize on a machine with fewer GPUs.
-        loaded_dict = torch.load(path, map_location= self.device)
+        loaded_dict = torch.load(path, map_location=self.device)
         if self.cfg.get("ckpt_manipulator", False):
             # suppose to be a string specifying which function to use
             print("\033[1;36m Warning: using a hacky way to load the model. \033[0m")
@@ -267,7 +267,7 @@ class OnPolicyRunner:
                 self.alg.state_dict(),
             )
             print("\033[1;36m Done: using a hacky way to load the model. \033[0m")
-        self.alg.load_state_dict(loaded_dict)
+        self.alg.load_state_dict(loaded_dict, load_optimizer=load_optimizer)
         self.current_learning_iteration = loaded_dict['iter']
         if self.cfg.get("ckpt_manipulator", False):
             try:
